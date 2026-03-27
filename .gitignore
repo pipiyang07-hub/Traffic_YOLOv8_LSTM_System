@@ -57,6 +57,17 @@ desktop.ini
 开题报告说明.docx
 毕业设计选题.md
 
+# 论文文档
+论文相关/
+*.pdf
+*.tex
+*.bib
+*.aux
+*.log
+*.toc
+*.lof
+*.lot
+
 # 输出文件（保留目录结构）
 data/videos/*
 data/output/*
