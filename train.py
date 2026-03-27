@@ -122,7 +122,7 @@ def main():
 
     # 创建序列数据
     X_train, y_train, X_test, y_test = prepare_data(
-        normalized_data.values,
+        normalized_data,
         seq_length
     )
 

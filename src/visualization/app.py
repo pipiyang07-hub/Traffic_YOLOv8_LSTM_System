@@ -6,6 +6,7 @@ Web visualization interface using Streamlit
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from pathlib import Path
 from datetime import datetime
 import tempfile
@@ -39,19 +40,23 @@ st.set_page_config(
 
 
 @st.cache_resource
-def load_detector(config):
+def load_detector(config, conf_threshold=None):
     """加载检测模型（缓存）"""
+    threshold = (
+        float(conf_threshold)
+        if conf_threshold is not None
+        else float(config['detection']['conf_threshold'])
+    )
     return YOLOv8Detector(
         model_path=config['detection']['model'],
         device=config['detection']['device'],
-        conf_threshold=config['detection']['conf_threshold'],
+        conf_threshold=threshold,
         classes=config['detection']['classes']
     )
 
 
-@st.cache_resource
 def load_predictor(model_path):
-    """加载预测模型（缓存）"""
+    """加载预测模型（不缓存，避免归一化参数跨会话污染）"""
     if Path(model_path).exists():
         return TrafficPredictor(model_path=model_path)
     return None
@@ -156,7 +161,7 @@ def show_detection_page(config):
 
             # 加载模型
             with st.spinner("加载模型..."):
-                detector = load_detector(config)
+                detector = load_detector(config, conf_threshold)
 
             # 打开视频
             video_reader = VideoReader(video_path)
@@ -183,6 +188,10 @@ def show_detection_page(config):
             # 处理视频
             total_frames = video_reader.frame_count
             processed_frames = 0
+            if total_frames <= 0:
+                video_reader.release()
+                st.error("视频帧数无效，可能是文件损坏或编码不受支持。请更换视频后重试。")
+                return
 
             # 输出视频
             output_dir = Path(config['paths']['output'])
@@ -201,11 +210,14 @@ def show_detection_page(config):
                 if not ret:
                     break
 
-                # 检测
-                detections = detector.detect(frame)
+                # 检测 + 跟踪（优先使用跟踪ID计数）
+                detections, track_ids = detector.detect_with_tracking(frame)
 
-                # 计数
-                counter.update(detections)
+                # 计数（有跟踪ID则走跟踪计数，失败时自动回退）
+                if track_ids is not None and len(track_ids) == len(detections):
+                    counter.update_with_tracking(detections, track_ids)
+                else:
+                    counter.update(detections)
 
                 # 绘制结果
                 frame = draw_detections(frame, detections)
@@ -218,7 +230,8 @@ def show_detection_page(config):
                 video_writer.write_frame(frame)
 
                 processed_frames += 1
-                progress = processed_frames / total_frames
+                denominator = max(total_frames, 1)
+                progress = min(processed_frames / denominator, 1.0)
                 progress_bar.progress(progress)
                 status_text.text(f"处理进度: {processed_frames}/{total_frames} 帧")
 
@@ -355,7 +368,7 @@ def show_prediction_page(config):
 
         # 预测
         predictions = predictor.predict_multi_step(
-            normalized_data,
+            data,
             steps=predict_steps,
             seq_length=seq_length
         )

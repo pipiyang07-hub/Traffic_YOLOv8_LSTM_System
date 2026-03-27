@@ -113,9 +113,9 @@ class DetectionLine:
         if prev_dist * curr_dist < 0:
             # 从正到负表示向上，从负到正表示向下
             if prev_dist > 0:
-                return 'up'
-            else:
                 return 'down'
+            else:
+                return 'up'
 
         return None
 

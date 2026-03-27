@@ -72,10 +72,17 @@ def parse_args():
     )
     parser.add_argument(
         '--show-progress',
+        dest='show_progress',
         action='store_true',
-        default=True,
         help='显示进度条'
     )
+    parser.add_argument(
+        '--no-progress',
+        dest='show_progress',
+        action='store_false',
+        help='关闭进度条'
+    )
+    parser.set_defaults(show_progress=True)
     return parser.parse_args()
 
 
@@ -163,11 +170,14 @@ def main():
         if not ret:
             break
 
-        # 检测
-        detections = detector.detect(frame)
+        # 检测 + 跟踪（优先使用跟踪ID计数）
+        detections, track_ids = detector.detect_with_tracking(frame)
 
-        # 计数
-        counter.update(detections)
+        # 计数（有跟踪ID则走跟踪计数，失败时自动回退）
+        if track_ids is not None and len(track_ids) == len(detections):
+            counter.update_with_tracking(detections, track_ids)
+        else:
+            counter.update(detections)
 
         # 绘制检测结果
         frame = draw_detections(

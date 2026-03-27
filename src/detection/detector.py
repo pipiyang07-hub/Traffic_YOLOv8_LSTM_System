@@ -23,7 +23,8 @@ class DetectionResult:
         box: Tuple[int, int, int, int],
         confidence: float,
         class_id: int,
-        class_name: str = None
+        class_name: str = None,
+        track_id: Optional[int] = None
     ):
         """
         初始化检测结果
@@ -38,6 +39,7 @@ class DetectionResult:
         self.confidence = confidence
         self.class_id = class_id
         self.class_name = class_name or get_vehicle_name(class_id)
+        self.track_id = track_id
 
     @property
     def center(self) -> Tuple[int, int]:
@@ -69,12 +71,16 @@ class DetectionResult:
             'confidence': self.confidence,
             'class_id': self.class_id,
             'class_name': self.class_name,
+            'track_id': self.track_id,
             'width': self.width,
             'height': self.height
         }
 
     def __repr__(self) -> str:
-        return f"DetectionResult({self.class_name}, conf={self.confidence:.2f}, box={self.box})"
+        return (
+            f"DetectionResult({self.class_name}, conf={self.confidence:.2f}, "
+            f"track_id={self.track_id}, box={self.box})"
+        )
 
 
 class YOLOv8Detector:
@@ -150,26 +156,79 @@ class YOLOv8Detector:
             verbose=verbose
         )
 
-        # 解析结果
-        detections = []
+        return self._parse_results(results, with_track_ids=False)[0]
+
+    def detect_with_tracking(
+        self,
+        image: np.ndarray,
+        tracker: str = "bytetrack.yaml",
+        persist: bool = True,
+        verbose: bool = False
+    ) -> Tuple[List[DetectionResult], Optional[List[int]]]:
+        """
+        对单帧图像进行目标检测与跟踪。
+
+        Returns:
+            (detections, track_ids)
+            - 若跟踪成功，track_ids与detections一一对应
+            - 若跟踪不可用，track_ids返回None
+        """
+        try:
+            results = self.model.track(
+                image,
+                conf=self.conf_threshold,
+                iou=self.iou_threshold,
+                classes=self.classes,
+                device=self.device,
+                tracker=tracker,
+                persist=persist,
+                verbose=verbose
+            )
+            return self._parse_results(results, with_track_ids=True)
+        except Exception as e:
+            logger.warning(f"跟踪失败，回退为纯检测: {e}")
+            detections = self.detect(image=image, verbose=verbose)
+            return detections, None
+
+    def _parse_results(
+        self,
+        results: Any,
+        with_track_ids: bool
+    ) -> Tuple[List[DetectionResult], Optional[List[int]]]:
+        """解析YOLO结果，按需提取track_id。"""
+        detections: List[DetectionResult] = []
+        track_ids: List[int] = []
+
         for result in results:
             boxes = result.boxes
             if boxes is None:
                 continue
 
+            has_ids = with_track_ids and getattr(boxes, "id", None) is not None
             for i in range(len(boxes)):
                 box = boxes.xyxy[i].cpu().numpy()  # (x1, y1, x2, y2)
                 conf = float(boxes.conf[i].cpu().numpy())
                 cls_id = int(boxes.cls[i].cpu().numpy())
+                track_id = None
+                if has_ids:
+                    track_id = int(boxes.id[i].cpu().numpy())
 
-                detection = DetectionResult(
-                    box=tuple(int(x) for x in box),
-                    confidence=conf,
-                    class_id=cls_id
+                detections.append(
+                    DetectionResult(
+                        box=tuple(int(x) for x in box),
+                        confidence=conf,
+                        class_id=cls_id,
+                        track_id=track_id
+                    )
                 )
-                detections.append(detection)
+                if track_id is not None:
+                    track_ids.append(track_id)
 
-        return detections
+        if with_track_ids:
+            if len(track_ids) == len(detections) and len(detections) > 0:
+                return detections, track_ids
+            return detections, None
+        return detections, None
 
     def detect_batch(
         self,

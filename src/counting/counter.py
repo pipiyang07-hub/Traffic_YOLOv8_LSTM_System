@@ -50,8 +50,53 @@ class VehicleCounter:
         # 记录已计数的车辆ID
         self.counted_ids: set = set()
 
+        # 轻量级轨迹管理（无跟踪器时用于跨帧ID稳定）
+        self.next_track_id: int = 0
+        self.track_last_seen: Dict[int, int] = {}
+        self.frame_index: int = 0
+        self.max_match_distance: float = 60.0
+        self.max_missed_frames: int = 10
+
         # 记录列表
         self.records: List[Dict[str, Any]] = []
+
+    def _assign_track_ids(
+        self,
+        detections: List[DetectionResult]
+    ) -> List[int]:
+        """
+        为当前帧检测结果分配稳定的临时轨迹ID（基于最近邻匹配）。
+        """
+        assigned = []
+        used_track_ids = set()
+
+        for det in detections:
+            curr_point = np.array(det.bottom_center, dtype=np.float32)
+            best_id = None
+            best_dist = float('inf')
+
+            for track_id, prev_point in self.prev_positions.items():
+                if track_id in used_track_ids:
+                    continue
+                # 类别不一致不匹配，降低错配概率
+                prev_class = getattr(self, "_track_class_ids", {}).get(track_id)
+                if prev_class is not None and prev_class != det.class_id:
+                    continue
+
+                prev_arr = np.array(prev_point, dtype=np.float32)
+                dist = float(np.linalg.norm(curr_point - prev_arr))
+                if dist < best_dist and dist <= self.max_match_distance:
+                    best_dist = dist
+                    best_id = track_id
+
+            if best_id is None:
+                best_id = self.next_track_id
+                self.next_track_id += 1
+
+            used_track_ids.add(best_id)
+            assigned.append(best_id)
+
+        return assigned
 
     def update(
         self,
@@ -70,21 +115,26 @@ class VehicleCounter:
         """
         if timestamp is None:
             timestamp = datetime.now()
+        self.frame_index += 1
 
         frame_counts = defaultdict(int)
+        track_ids = self._assign_track_ids(detections)
+        if not hasattr(self, "_track_class_ids"):
+            self._track_class_ids = {}
 
-        for i, det in enumerate(detections):
-            # 使用索引作为简单ID（因为没有跟踪）
+        for det, track_id in zip(detections, track_ids):
             # 使用底部中心点作为判断点
             curr_point = det.bottom_center
 
             # 检查是否已计数
-            if i in self.counted_ids:
-                self.prev_positions[i] = curr_point
+            if track_id in self.counted_ids:
+                self.prev_positions[track_id] = curr_point
+                self.track_last_seen[track_id] = self.frame_index
+                self._track_class_ids[track_id] = det.class_id
                 continue
 
             # 获取上一帧位置
-            prev_point = self.prev_positions.get(i)
+            prev_point = self.prev_positions.get(track_id)
 
             # 检查是否越过检测线
             crossed = self.line.is_crossed(prev_point, curr_point)
@@ -102,7 +152,7 @@ class VehicleCounter:
                     self.total_counts[det.class_id] += 1
                     self.direction_counts[crossed][det.class_id] += 1
                     frame_counts[det.class_id] += 1
-                    self.counted_ids.add(i)
+                    self.counted_ids.add(track_id)
 
                     # 创建记录
                     record = create_traffic_record(
@@ -120,7 +170,21 @@ class VehicleCounter:
                     )
 
             # 更新位置记录
-            self.prev_positions[i] = curr_point
+            self.prev_positions[track_id] = curr_point
+            self.track_last_seen[track_id] = self.frame_index
+            self._track_class_ids[track_id] = det.class_id
+
+        # 清理长期未出现的轨迹，避免字典无限增长
+        stale_ids = [
+            track_id for track_id, last_seen in self.track_last_seen.items()
+            if self.frame_index - last_seen > self.max_missed_frames
+        ]
+        for track_id in stale_ids:
+            self.prev_positions.pop(track_id, None)
+            self.track_last_seen.pop(track_id, None)
+            self.counted_ids.discard(track_id)
+            if hasattr(self, "_track_class_ids"):
+                self._track_class_ids.pop(track_id, None)
 
         return dict(frame_counts)
 
@@ -191,7 +255,12 @@ class VehicleCounter:
         """重置帧计数（保留总计数和记录）"""
         self.counts.clear()
         self.prev_positions.clear()
+        self.track_last_seen.clear()
         self.counted_ids.clear()
+        self.frame_index = 0
+        self.next_track_id = 0
+        if hasattr(self, "_track_class_ids"):
+            self._track_class_ids.clear()
 
     def reset_all(self):
         """重置所有计数"""
@@ -202,7 +271,12 @@ class VehicleCounter:
             'down': defaultdict(int)
         }
         self.prev_positions.clear()
+        self.track_last_seen.clear()
         self.counted_ids.clear()
+        self.frame_index = 0
+        self.next_track_id = 0
+        if hasattr(self, "_track_class_ids"):
+            self._track_class_ids.clear()
         self.records.clear()
 
     def get_total_count(self) -> int:

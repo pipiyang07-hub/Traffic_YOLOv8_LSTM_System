@@ -96,6 +96,8 @@ python main.py --video data/videos/traffic.mp4 \
 # --line: 检测线位置比例（0-1，默认0.5）
 # --device: 运行设备（cuda/cpu）
 # --save-data: 保存流量数据到CSV
+# --show-progress: 显示进度条（默认开启）
+# --no-progress: 关闭进度条
 ```
 
 ### 2. 模型训练
@@ -197,3 +199,30 @@ prediction:
 ## 许可证
 
 本项目仅供学习和研究使用。
+
+## 答辩演示准备（推荐）
+
+为避免现场演示时因缺少数据或模型导致中断，先执行一键检查：
+
+```bash
+python scripts/check_demo_ready.py
+```
+
+检查项包括：
+- `data/videos` 中是否有可用演示视频（mp4/avi/mov）
+- `data/traffic_data.csv` 是否存在且列完整
+- `data/models/best_model.pth` 是否可加载
+- `data/models/norm_params.json` 是否存在
+
+若检查失败，可按以下顺序生成演示资产：
+
+```bash
+# 1) 从视频生成流量数据
+python main.py --video data/videos/<your_video>.mp4 --save-data
+
+# 2) 训练LSTM模型
+python train.py --data data/traffic_data.csv
+
+# 3) 启动Web可视化
+streamlit run src/visualization/app.py
+```
