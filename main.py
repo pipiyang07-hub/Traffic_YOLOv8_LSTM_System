@@ -22,7 +22,6 @@ from src.utils.logger import setup_logger
 
 logger = setup_logger(log_file="logs/detection.log")
 
-
 def parse_args():
     """解析命令行参数"""
     parser = argparse.ArgumentParser(
@@ -169,7 +168,7 @@ def main():
         ret, frame = video_reader.read_frame()
         if not ret:
             break
-
+        assert frame is not None
         # 检测 + 跟踪（优先使用跟踪ID计数）
         detections, track_ids = detector.detect_with_tracking(frame)
 

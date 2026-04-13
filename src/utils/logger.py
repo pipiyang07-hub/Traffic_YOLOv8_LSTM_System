@@ -12,7 +12,7 @@ from datetime import datetime
 def setup_logger(
     name: str = "traffic_system",
     level: int = logging.INFO,
-    log_file: str = None
+    log_file: str | None = None 
 ) -> logging.Logger:
     """
     设置并返回配置好的日志记录器
@@ -32,6 +32,8 @@ def setup_logger(
         return logger
 
     logger.setLevel(level)
+
+
 
     # 日志格式
     formatter = logging.Formatter(
