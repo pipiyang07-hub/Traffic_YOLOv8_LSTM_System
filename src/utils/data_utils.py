@@ -56,6 +56,7 @@ def save_to_csv(
         return output_path
 
     path = Path(output_path)
+    # 确保目录存在
     path.parent.mkdir(parents=True, exist_ok=True)
 
     df = pd.DataFrame(data)
@@ -65,7 +66,7 @@ def save_to_csv(
     if mode == 'a' and path.exists():
         header = False
 
-    df.to_csv(path, mode=mode, index=False, header=header, encoding='utf-8')
+    df.to_csv(path, mode=mode, index=False, header=header, encoding='utf-8') # type: ignore
     logger.info(f"数据已保存: {path} ({len(data)} 条记录)")
 
     return str(path)

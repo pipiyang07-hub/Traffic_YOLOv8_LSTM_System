@@ -48,6 +48,10 @@ desktop.ini
 *.temp
 *.bak
 
+# 个人笔记
+note/
+LEARNING_CHECKLIST.md
+
 # 毕业设计文档
 *.docx
 *.doc

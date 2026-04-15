@@ -5,7 +5,7 @@ Video processing utilities
 
 import cv2
 from pathlib import Path
-from typing import Optional, Generator, Tuple
+from typing import Any, Optional, Generator, Tuple
 import numpy as np
 
 from .logger import get_default_logger
@@ -24,7 +24,7 @@ class VideoReader:
             video_path: 视频文件路径
         """
         self.video_path = Path(video_path)
-        self.cap = None
+        self.cap: Any | None = None
         self._open()
 
     def _open(self):
@@ -41,21 +41,25 @@ class VideoReader:
     @property
     def width(self) -> int:
         """视频宽度"""
+        assert self.cap is not None
         return int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 
     @property
     def height(self) -> int:
         """视频高度"""
+        assert self.cap is not None
         return int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     @property
     def fps(self) -> float:
         """视频帧率"""
+        assert self.cap is not None
         return self.cap.get(cv2.CAP_PROP_FPS)
 
     @property
     def frame_count(self) -> int:
         """总帧数"""
+        assert self.cap is not None
         return int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     @property
@@ -70,6 +74,7 @@ class VideoReader:
         Returns:
             (success, frame) 元组
         """
+        assert self.cap is not None
         return self.cap.read()
 
     def read_frames(self) -> Generator[np.ndarray, None, None]:
@@ -79,6 +84,7 @@ class VideoReader:
         Yields:
             视频帧
         """
+        assert self.cap is not None
         while True:
             ret, frame = self.cap.read()
             if not ret:
@@ -92,11 +98,12 @@ class VideoReader:
         Args:
             frame_idx: 帧索引
         """
+        assert self.cap is not None
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
 
     def release(self):
         """释放资源"""
-        if self.cap:
+        if self.cap is not None:
             self.cap.release()
             logger.info("视频读取器已释放")
 
@@ -136,13 +143,16 @@ class VideoWriter:
         self.height = height
         self.fps = fps
         self.fourcc = fourcc
-        self.writer = None
+        self.writer: Any | None = None
         self._open()
 
     def _open(self):
         """创建视频写入器"""
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
-        fourcc = cv2.VideoWriter_fourcc(*self.fourcc)
+        fourcc_fn = getattr(cv2, "VideoWriter_fourcc", None)
+        if fourcc_fn is None:
+            raise AttributeError("cv2 does not provide VideoWriter_fourcc")
+        fourcc = fourcc_fn(*self.fourcc)
         self.writer = cv2.VideoWriter(
             str(self.output_path),
             fourcc,
@@ -164,9 +174,10 @@ class VideoWriter:
         """
         if frame.shape[1] != self.width or frame.shape[0] != self.height:
             frame = cv2.resize(frame, (self.width, self.height))
+        assert self.writer is not None
         self.writer.write(frame)
 
-    def write_frames(self, frames: list):
+    def write_frames(self, frames: list[np.ndarray]):
         """
         写入多帧
 
@@ -178,7 +189,7 @@ class VideoWriter:
 
     def release(self):
         """释放资源"""
-        if self.writer:
+        if self.writer is not None:
             self.writer.release()
             logger.info(f"视频已保存: {self.output_path}")
 

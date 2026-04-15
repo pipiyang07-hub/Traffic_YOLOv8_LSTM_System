@@ -23,7 +23,7 @@ class DetectionResult:
         box: Tuple[int, int, int, int],
         confidence: float,
         class_id: int,
-        class_name: str = None,
+        class_name: str | None= None,
         track_id: Optional[int] = None
     ):
         """
@@ -92,7 +92,7 @@ class YOLOv8Detector:
         device: str = "cuda",
         conf_threshold: float = 0.5,
         iou_threshold: float = 0.45,
-        classes: List[int] = None
+        classes: List[int] | None = None
     ):
         """
         初始化YOLOv8检测器
@@ -147,6 +147,7 @@ class YOLOv8Detector:
             检测结果列表
         """
         # 执行检测
+        assert self.model is not None
         results = self.model.predict(
             image,
             conf=self.conf_threshold,
@@ -174,6 +175,7 @@ class YOLOv8Detector:
             - 若跟踪不可用，track_ids返回None
         """
         try:
+            assert self.model is not None
             results = self.model.track(
                 image,
                 conf=self.conf_threshold,
@@ -215,7 +217,7 @@ class YOLOv8Detector:
 
                 detections.append(
                     DetectionResult(
-                        box=tuple(int(x) for x in box),
+                        box=tuple(int(x) for x in box), # type: ignore
                         confidence=conf,
                         class_id=cls_id,
                         track_id=track_id
@@ -252,6 +254,7 @@ class YOLOv8Detector:
 
     def get_class_names(self) -> Dict[int, str]:
         """获取模型支持的类别名称"""
+        assert self.model is not None
         return self.model.names
 
     def __repr__(self) -> str:
